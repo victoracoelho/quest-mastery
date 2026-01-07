@@ -3,7 +3,6 @@ import { Card, CardContent } from '@/components/ui/card';
 import { TopicBadge } from '@/components/TopicBadge';
 import { Topic, Subject } from '@/types';
 import { getTopicStatus } from '@/services/planGenerator';
-import { formatDateShort } from '@/lib/storage';
 import { GripVertical, BookOpen } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -64,11 +63,6 @@ export function TopicCard({ topic, subject, index, targetDate, onClick, isComple
                     )}>
                       {topic.lastScorePercent}%
                     </span>
-                    {topic.nextReviewAt && (
-                      <span className="text-muted-foreground ml-2">
-                        • Próxima: {formatDateShort(topic.nextReviewAt)}
-                      </span>
-                    )}
                   </div>
                 )}
               </div>

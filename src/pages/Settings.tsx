@@ -152,42 +152,6 @@ const SettingsPage = () => {
             </CardContent>
           </Card>
 
-          {/* Algorithm Info */}
-          <Card>
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2">
-                <Info className="w-5 h-5" />
-                Como Funciona a Revisão
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-4 text-sm">
-                <p className="text-muted-foreground">
-                  O sistema usa <strong>revisão espaçada</strong> para agendar suas revisões:
-                </p>
-                
-                <div className="bg-muted rounded-lg p-4 space-y-2">
-                  <div className="flex items-center justify-between">
-                    <span className="text-destructive font-medium">0-6 acertos (&lt; 70%)</span>
-                    <span className="font-mono">+3 dias</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-warning font-medium">7 acertos (70-79%)</span>
-                    <span className="font-mono">+10 dias</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-success font-medium">8-10 acertos (≥ 80%)</span>
-                    <span className="font-mono">+15 dias</span>
-                  </div>
-                </div>
-                
-                <p className="text-muted-foreground">
-                  Quanto melhor seu desempenho, mais tempo até a próxima revisão. Isso otimiza sua memória de longo prazo.
-                </p>
-              </div>
-            </CardContent>
-          </Card>
-
           {/* Account Section */}
           <Card>
             <CardHeader>
