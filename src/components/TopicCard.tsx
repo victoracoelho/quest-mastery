@@ -24,19 +24,17 @@ export function TopicCard({ topic, subject, index, targetDate, onClick, isComple
         <Card
           ref={provided.innerRef}
           {...provided.draggableProps}
+          {...provided.dragHandleProps}
           className={cn(
-            'cursor-pointer transition-all hover:shadow-md',
-            snapshot.isDragging && 'shadow-lg ring-2 ring-primary/30',
+            'cursor-grab transition-all hover:shadow-md',
+            snapshot.isDragging && 'shadow-lg ring-2 ring-primary/30 cursor-grabbing',
             isCompleted && 'opacity-75'
           )}
           onClick={onClick}
         >
           <CardContent className="p-4">
             <div className="flex items-start gap-3">
-              <div
-                {...provided.dragHandleProps}
-                className="mt-1 text-muted-foreground hover:text-foreground transition-colors"
-              >
+              <div className="mt-1 text-muted-foreground">
                 <GripVertical className="w-4 h-4" />
               </div>
               
