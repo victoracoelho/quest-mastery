@@ -11,8 +11,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { Topic, Subject } from '@/types';
-import { calculateNextReview, getPerformanceLabel, getPerformanceColor } from '@/services/scheduler';
-import { formatDate } from '@/lib/storage';
+import { getPerformanceLabel, getPerformanceColor } from '@/services/scheduler';
 import { cn } from '@/lib/utils';
 import { CheckCircle2 } from 'lucide-react';
 
@@ -34,7 +33,6 @@ export function CompleteReviewModal({
   const [correctAnswers, setCorrectAnswers] = useState<number>(0);
   const [reviewNote, setReviewNote] = useState('');
 
-  const scheduleResult = calculateNextReview(correctAnswers);
   const scorePercent = (correctAnswers / 10) * 100;
 
   const handleSubmit = () => {
@@ -103,12 +101,6 @@ export function CompleteReviewModal({
               <span className="text-sm text-muted-foreground">Desempenho:</span>
               <span className={cn('font-medium', getPerformanceColor(correctAnswers))}>
                 {getPerformanceLabel(correctAnswers)}
-              </span>
-            </div>
-            <div className="flex items-center justify-between">
-              <span className="text-sm text-muted-foreground">Próxima revisão:</span>
-              <span className="font-medium">
-                {formatDate(scheduleResult.nextReviewAt)} (+{scheduleResult.daysUntilReview} dias)
               </span>
             </div>
           </div>

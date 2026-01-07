@@ -1,8 +1,10 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Settings, History, LayoutDashboard, LogOut, Menu, X } from 'lucide-react';
+import { BookOpen, Settings, History, LayoutDashboard, LogOut, Menu, X, MessageCircle } from 'lucide-react';
 import { useState } from 'react';
+
+const WHATSAPP_SUPPORT_URL = 'https://wa.me/5511999999999'; // Substitua pelo seu número
 
 export function AppHeader() {
   const { user, logout } = useAuth();
@@ -46,11 +48,18 @@ export function AppHeader() {
             ))}
           </nav>
 
-          {/* User Info & Logout */}
-          <div className="flex items-center gap-3">
+          {/* User Info & Actions */}
+          <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground hidden sm:block">
               Olá, <span className="font-medium text-foreground">{user?.name}</span>
             </span>
+            
+            <a href={WHATSAPP_SUPPORT_URL} target="_blank" rel="noopener noreferrer">
+              <Button variant="ghost" size="icon" title="Suporte via WhatsApp" className="text-success hover:text-success">
+                <MessageCircle className="w-4 h-4" />
+              </Button>
+            </a>
+            
             <Button variant="ghost" size="icon" onClick={logout} title="Sair">
               <LogOut className="w-4 h-4" />
             </Button>
