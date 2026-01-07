@@ -15,9 +15,9 @@ import { Topic, Subject, ReviewLog } from '@/types';
 import { updateTopic } from '@/repositories/topicRepository';
 import { getReviewLogsByTopic } from '@/repositories/reviewLogRepository';
 import { formatDate } from '@/lib/storage';
-import { getDaysUntilReview, getPerformanceColor } from '@/services/scheduler';
+import { getPerformanceColor } from '@/services/scheduler';
 import { cn } from '@/lib/utils';
-import { BookOpen, Calendar, TrendingUp, Save, History } from 'lucide-react';
+import { BookOpen, TrendingUp, Save, History } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 interface TopicDetailsDrawerProps {
@@ -47,7 +47,6 @@ export function TopicDetailsDrawer({
   });
 
   const reviewLogs = topic ? getReviewLogsByTopic(topic.id) : [];
-  const daysUntil = topic?.nextReviewAt ? getDaysUntilReview(topic.nextReviewAt) : null;
 
   const handleSaveNotes = () => {
     if (!topic) return;
@@ -97,30 +96,13 @@ export function TopicDetailsDrawer({
 
               <div className="bg-muted rounded-lg p-4">
                 <div className="flex items-center gap-2 text-muted-foreground mb-1">
-                  <Calendar className="w-4 h-4" />
-                  <span className="text-xs">Próxima revisão</span>
+                  <History className="w-4 h-4" />
+                  <span className="text-xs">Total de revisões</span>
                 </div>
-                {topic.nextReviewAt ? (
-                  <div>
-                    <span className="text-lg font-semibold">{formatDate(topic.nextReviewAt)}</span>
-                    {daysUntil !== null && (
-                      <span className={cn(
-                        'block text-xs',
-                        daysUntil <= 0 ? 'text-destructive' : 'text-muted-foreground'
-                      )}>
-                        {daysUntil === 0 ? 'Hoje!' : daysUntil < 0 ? `${Math.abs(daysUntil)} dias atrasado` : `Em ${daysUntil} dias`}
-                      </span>
-                    )}
-                  </div>
-                ) : (
-                  <span className="text-lg text-muted-foreground">Não revisado</span>
-                )}
+                <span className="text-2xl font-bold">{topic.totalReviews}</span>
               </div>
             </div>
 
-            <div className="text-sm text-muted-foreground">
-              Total de revisões: <span className="font-medium text-foreground">{topic.totalReviews}</span>
-            </div>
 
             <Separator />
 
