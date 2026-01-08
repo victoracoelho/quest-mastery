@@ -7,7 +7,7 @@ import { useState } from 'react';
 const WHATSAPP_SUPPORT_URL = 'https://wa.me/5511999999999'; // Substitua pelo seu número
 
 export function AppHeader() {
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
 
@@ -51,7 +51,7 @@ export function AppHeader() {
           {/* User Info & Actions */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground hidden sm:block">
-              Olá, <span className="font-medium text-foreground">{user?.name}</span>
+              Olá, <span className="font-medium text-foreground">{user?.email?.split('@')[0]}</span>
             </span>
             
             <a href={WHATSAPP_SUPPORT_URL} target="_blank" rel="noopener noreferrer">
@@ -60,7 +60,7 @@ export function AppHeader() {
               </Button>
             </a>
             
-            <Button variant="ghost" size="icon" onClick={logout} title="Sair">
+            <Button variant="ghost" size="icon" onClick={signOut} title="Sair">
               <LogOut className="w-4 h-4" />
             </Button>
 
