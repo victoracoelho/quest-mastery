@@ -24,7 +24,7 @@ import { useNavigate } from 'react-router-dom';
 import { Settings, Save, Trash2, LogOut, Info } from 'lucide-react';
 
 const SettingsPage = () => {
-  const { user, logout } = useAuth();
+  const { user, signOut } = useAuth();
   const { toast } = useToast();
   const navigate = useNavigate();
   
@@ -69,13 +69,13 @@ const SettingsPage = () => {
       description: 'Todos os seus dados foram removidos.',
     });
     
-    logout();
-    navigate('/');
+    signOut();
+    navigate('/login');
   };
 
   const handleLogout = () => {
-    logout();
-    navigate('/');
+    signOut();
+    navigate('/login');
   };
 
   const handleCardsPorDiaChange = (value: number) => {
@@ -163,7 +163,7 @@ const SettingsPage = () => {
             <CardContent className="space-y-4">
               {user && (
                 <div className="bg-muted rounded-lg p-4">
-                  <p className="font-medium">{user.name}</p>
+                  <p className="font-medium">{user.email?.split('@')[0]}</p>
                   <p className="text-sm text-muted-foreground">{user.email}</p>
                 </div>
               )}
