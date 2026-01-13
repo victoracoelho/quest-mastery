@@ -1,11 +1,13 @@
 import { useState, useEffect } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { useSubscription, PRICE_IDS } from '@/contexts/SubscriptionContext';
 import { AppHeader } from '@/components/AppHeader';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
+import { Badge } from '@/components/ui/badge';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -21,16 +23,18 @@ import { Settings as SettingsType } from '@/types';
 import { getSettingsByUser, updateSettings } from '@/repositories/settingsRepository';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
-import { Settings, Save, Trash2, LogOut, Info } from 'lucide-react';
+import { Settings, Save, Trash2, LogOut, Info, CreditCard, Crown, Loader2 } from 'lucide-react';
 
 const SettingsPage = () => {
   const { user, signOut } = useAuth();
+  const { subscribed, status, priceId, currentPeriodEnd, openCustomerPortal, isMonthly, isYearly } = useSubscription();
   const { toast } = useToast();
   const navigate = useNavigate();
   
   const [settings, setSettings] = useState<SettingsType | null>(null);
   const [cardsPorDia, setCardsPorDia] = useState(3);
   const [hasChanges, setHasChanges] = useState(false);
+  const [portalLoading, setPortalLoading] = useState(false);
 
   useEffect(() => {
     if (!user) return;
@@ -81,6 +85,36 @@ const SettingsPage = () => {
   const handleCardsPorDiaChange = (value: number) => {
     setCardsPorDia(value);
     setHasChanges(value !== settings?.cardsPorDia);
+  };
+
+  const handleOpenPortal = async () => {
+    try {
+      setPortalLoading(true);
+      await openCustomerPortal();
+    } catch (error) {
+      toast({
+        title: 'Erro ao abrir portal',
+        description: 'Tente novamente mais tarde',
+        variant: 'destructive',
+      });
+    } finally {
+      setPortalLoading(false);
+    }
+  };
+
+  const getPlanName = () => {
+    if (isMonthly) return 'Mensal';
+    if (isYearly) return 'Anual';
+    return 'Ativo';
+  };
+
+  const formatDate = (dateString: string | null) => {
+    if (!dateString) return '-';
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: 'long',
+      year: 'numeric'
+    });
   };
 
   return (
@@ -149,6 +183,63 @@ const SettingsPage = () => {
                 <Save className="w-4 h-4 mr-2" />
                 Salvar Configurações
               </Button>
+            </CardContent>
+          </Card>
+
+          {/* Subscription Section */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2">
+                <Crown className="w-5 h-5 text-primary" />
+                Assinatura
+              </CardTitle>
+              <CardDescription>
+                Gerencie seu plano de assinatura
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="bg-muted rounded-lg p-4 space-y-3">
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Plano atual</span>
+                  <Badge variant="default" className="bg-primary">
+                    {getPlanName()}
+                  </Badge>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-sm text-muted-foreground">Status</span>
+                  <Badge variant={status === 'active' ? 'default' : 'secondary'}>
+                    {status === 'active' ? 'Ativo' : status === 'trialing' ? 'Período de teste' : status || 'Inativo'}
+                  </Badge>
+                </div>
+                {currentPeriodEnd && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm text-muted-foreground">Próxima cobrança</span>
+                    <span className="text-sm font-medium">{formatDate(currentPeriodEnd)}</span>
+                  </div>
+                )}
+              </div>
+              
+              <Button 
+                onClick={handleOpenPortal} 
+                variant="outline" 
+                className="w-full"
+                disabled={portalLoading}
+              >
+                {portalLoading ? (
+                  <>
+                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    Abrindo...
+                  </>
+                ) : (
+                  <>
+                    <CreditCard className="w-4 h-4 mr-2" />
+                    Gerenciar Assinatura
+                  </>
+                )}
+              </Button>
+              <p className="text-xs text-muted-foreground text-center">
+                Altere seu plano, método de pagamento ou cancele sua assinatura
+              </p>
             </CardContent>
           </Card>
 
