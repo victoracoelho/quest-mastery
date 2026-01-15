@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      profiles: {
+        Row: {
+          created_at: string | null
+          email: string | null
+          full_name: string
+          id: string
+          phone: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          email?: string | null
+          full_name: string
+          id?: string
+          phone: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          email?: string | null
+          full_name?: string
+          id?: string
+          phone?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: []
+      }
       quests: {
         Row: {
           completed_at: string | null
@@ -86,30 +116,6 @@ export type Database = {
           stripe_subscription_id?: string | null
           updated_at?: string
           user_id?: string
-        }
-        Relationships: []
-      }
-      users_profile: {
-        Row: {
-          avatar_url: string | null
-          created_at: string | null
-          id: string
-          user_id: string
-          username: string | null
-        }
-        Insert: {
-          avatar_url?: string | null
-          created_at?: string | null
-          id?: string
-          user_id: string
-          username?: string | null
-        }
-        Update: {
-          avatar_url?: string | null
-          created_at?: string | null
-          id?: string
-          user_id?: string
-          username?: string | null
         }
         Relationships: []
       }

@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useState, ReactNode, useCallback } from 'react';
 import { supabase } from '@/integrations/supabase/client';
 import { useAuth } from './AuthContext';
+import { isAdminEmail } from '@/lib/adminAllowlist';
 
 // Price IDs from Stripe
 export const PRICE_IDS = {
@@ -15,6 +16,7 @@ interface SubscriptionState {
   currentPeriodEnd: string | null;
   loading: boolean;
   error: string | null;
+  isAdmin: boolean;
 }
 
 interface SubscriptionContextType extends SubscriptionState {
@@ -23,6 +25,7 @@ interface SubscriptionContextType extends SubscriptionState {
   openCustomerPortal: () => Promise<void>;
   isMonthly: boolean;
   isYearly: boolean;
+  hasAppAccess: boolean; // Central access check
 }
 
 const SubscriptionContext = createContext<SubscriptionContextType | undefined>(undefined);
@@ -44,11 +47,29 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     currentPeriodEnd: null,
     loading: true,
     error: null,
+    isAdmin: false,
   });
 
   const checkSubscription = useCallback(async () => {
     if (!user) {
-      setState(prev => ({ ...prev, subscribed: false, loading: false }));
+      setState(prev => ({ ...prev, subscribed: false, loading: false, isAdmin: false }));
+      return;
+    }
+
+    // Check if user is admin first
+    const userIsAdmin = isAdminEmail(user.email);
+    
+    if (userIsAdmin) {
+      // Admin users get full access without checking subscription
+      setState({
+        subscribed: true,
+        status: 'admin',
+        priceId: null,
+        currentPeriodEnd: null,
+        loading: false,
+        error: null,
+        isAdmin: true,
+      });
       return;
     }
 
@@ -57,7 +78,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
       
       const { data: { session } } = await supabase.auth.getSession();
       if (!session) {
-        setState(prev => ({ ...prev, subscribed: false, loading: false }));
+        setState(prev => ({ ...prev, subscribed: false, loading: false, isAdmin: false }));
         return;
       }
 
@@ -76,6 +97,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         currentPeriodEnd: data.current_period_end,
         loading: false,
         error: null,
+        isAdmin: false,
       });
     } catch (error) {
       console.error('Error checking subscription:', error);
@@ -83,6 +105,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
         ...prev,
         loading: false,
         error: error instanceof Error ? error.message : 'Failed to check subscription',
+        isAdmin: false,
       }));
     }
   }, [user]);
@@ -142,6 +165,9 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     return () => clearInterval(interval);
   }, [user, checkSubscription]);
 
+  // Central access check: admin OR subscribed
+  const hasAppAccess = state.isAdmin || state.subscribed;
+
   const value: SubscriptionContextType = {
     ...state,
     checkSubscription,
@@ -149,6 +175,7 @@ export const SubscriptionProvider = ({ children }: { children: ReactNode }) => {
     openCustomerPortal,
     isMonthly: state.priceId === PRICE_IDS.MONTHLY,
     isYearly: state.priceId === PRICE_IDS.YEARLY,
+    hasAppAccess,
   };
 
   return (
