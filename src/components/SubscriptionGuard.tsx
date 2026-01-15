@@ -7,7 +7,7 @@ interface SubscriptionGuardProps {
 }
 
 export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
-  const { subscribed, loading } = useSubscription();
+  const { hasAppAccess, loading } = useSubscription();
 
   if (loading) {
     return (
@@ -17,7 +17,8 @@ export function SubscriptionGuard({ children }: SubscriptionGuardProps) {
     );
   }
 
-  if (!subscribed) {
+  // Use central access check (admin OR subscribed)
+  if (!hasAppAccess) {
     return <Navigate to="/pricing" replace />;
   }
 

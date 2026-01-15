@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
@@ -7,6 +7,31 @@ import { Label } from '@/components/ui/label';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useToast } from '@/hooks/use-toast';
 import { BookOpen, ArrowLeft, LogIn, UserPlus } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
+import { z } from 'zod';
+
+// Validation schemas
+const emailSchema = z.string().trim().email('Email inválido').max(255, 'Email muito longo');
+const passwordSchema = z.string().min(6, 'A senha deve ter pelo menos 6 caracteres');
+const fullNameSchema = z.string()
+  .trim()
+  .min(3, 'Nome deve ter pelo menos 3 caracteres')
+  .max(100, 'Nome muito longo')
+  .refine((name) => name.split(/\s+/).filter(Boolean).length >= 2, {
+    message: 'Por favor, digite seu nome completo (nome e sobrenome)',
+  });
+const phoneSchema = z.string()
+  .trim()
+  .min(10, 'Telefone deve ter pelo menos 10 dígitos (com DDD)')
+  .max(15, 'Telefone muito longo')
+  .refine((phone) => /^\d{10,15}$/.test(phone.replace(/\D/g, '')), {
+    message: 'Telefone inválido. Digite apenas números com DDD',
+  });
+
+// Normalize phone to digits only
+function normalizePhone(phone: string): string {
+  return phone.replace(/\D/g, '');
+}
 
 const Login = () => {
   const navigate = useNavigate();
@@ -14,56 +39,115 @@ const Login = () => {
   const { toast } = useToast();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [fullName, setFullName] = useState('');
+  const [phone, setPhone] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isSignUpMode, setIsSignUpMode] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
 
   // Redirect if already logged in
-  if (user) {
-    navigate('/app', { replace: true });
-    return null;
-  }
+  useEffect(() => {
+    if (user) {
+      navigate('/app', { replace: true });
+    }
+  }, [user, navigate]);
+
+  const validateForm = () => {
+    const errors: Record<string, string> = {};
+    
+    try {
+      emailSchema.parse(email);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        errors.email = e.errors[0]?.message || 'Email inválido';
+      }
+    }
+
+    try {
+      passwordSchema.parse(password);
+    } catch (e) {
+      if (e instanceof z.ZodError) {
+        errors.password = e.errors[0]?.message || 'Senha inválida';
+      }
+    }
+
+    if (isSignUpMode) {
+      try {
+        fullNameSchema.parse(fullName);
+      } catch (e) {
+        if (e instanceof z.ZodError) {
+          errors.fullName = e.errors[0]?.message || 'Nome inválido';
+        }
+      }
+
+      try {
+        phoneSchema.parse(phone);
+      } catch (e) {
+        if (e instanceof z.ZodError) {
+          errors.phone = e.errors[0]?.message || 'Telefone inválido';
+        }
+      }
+    }
+
+    setFieldErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     
+    if (!validateForm()) {
+      return;
+    }
+
     const trimmedEmail = email.trim().toLowerCase();
     const trimmedPassword = password.trim();
-    
-    if (!trimmedEmail || !trimmedEmail.includes('@')) {
-      toast({
-        title: 'Email inválido',
-        description: 'Por favor, digite um email válido.',
-        variant: 'destructive',
-      });
-      return;
-    }
-    
-    if (!trimmedPassword || trimmedPassword.length < 6) {
-      toast({
-        title: 'Senha inválida',
-        description: 'A senha deve ter pelo menos 6 caracteres.',
-        variant: 'destructive',
-      });
-      return;
-    }
 
     setIsLoading(true);
     
     try {
       if (isSignUpMode) {
-        // Criar nova conta
-        const { error } = await signUp(trimmedEmail, trimmedPassword);
+        const trimmedFullName = fullName.trim();
+        const normalizedPhone = normalizePhone(phone);
+        
+        // Create user account
+        const { data, error } = await signUp(trimmedEmail, trimmedPassword);
         
         if (error) throw error;
+
+        // Create profile record
+        if (data?.user) {
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .insert({
+              user_id: data.user.id,
+              email: trimmedEmail,
+              full_name: trimmedFullName,
+              phone: normalizedPhone,
+            });
+
+          if (profileError) {
+            console.error('Error creating profile:', profileError);
+            // Still show success but warn about profile
+            toast({
+              title: 'Conta criada!',
+              description: 'Verifique seu email para confirmar. Alguns dados podem precisar ser atualizados depois.',
+              variant: 'default',
+            });
+          } else {
+            toast({
+              title: 'Conta criada com sucesso!',
+              description: 'Verifique seu email para confirmar sua conta.',
+            });
+          }
+        }
         
-        toast({
-          title: 'Conta criada!',
-          description: 'Verifique seu email para confirmar sua conta.',
-        });
         setIsSignUpMode(false);
         setPassword('');
+        setFullName('');
+        setPhone('');
       } else {
-        // Fazer login
+        // Login
         const { error } = await signIn(trimmedEmail, trimmedPassword);
         
         if (error) throw error;
@@ -75,15 +159,29 @@ const Login = () => {
         navigate('/app');
       }
     } catch (error: any) {
+      let errorMessage = 'Não foi possível completar a operação. Tente novamente.';
+      
+      if (error.message?.includes('already registered')) {
+        errorMessage = 'Este email já está cadastrado. Tente fazer login.';
+      } else if (error.message?.includes('Invalid login')) {
+        errorMessage = 'Email ou senha incorretos.';
+      } else if (error.message) {
+        errorMessage = error.message;
+      }
+      
       toast({
         title: 'Erro',
-        description: error.message || 'Não foi possível completar a operação. Tente novamente.',
+        description: errorMessage,
         variant: 'destructive',
       });
     } finally {
       setIsLoading(false);
     }
   };
+
+  if (user) {
+    return null;
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -110,37 +208,106 @@ const Login = () => {
             </CardTitle>
             <CardDescription>
               {isSignUpMode 
-                ? 'Crie sua conta para começar sua jornada de estudos'
+                ? 'Preencha seus dados para começar sua jornada de estudos'
                 : 'Digite seus dados para acessar sua conta'}
             </CardDescription>
           </CardHeader>
           
           <CardContent>
             <form onSubmit={handleSubmit} className="space-y-4">
+              {/* Full Name - Only on signup */}
+              {isSignUpMode && (
+                <div className="space-y-2">
+                  <Label htmlFor="fullName">Nome Completo *</Label>
+                  <Input
+                    id="fullName"
+                    type="text"
+                    placeholder="João da Silva"
+                    value={fullName}
+                    onChange={(e) => {
+                      setFullName(e.target.value);
+                      if (fieldErrors.fullName) {
+                        setFieldErrors(prev => ({ ...prev, fullName: '' }));
+                      }
+                    }}
+                    disabled={isLoading}
+                    className={fieldErrors.fullName ? 'border-destructive' : ''}
+                  />
+                  {fieldErrors.fullName && (
+                    <p className="text-xs text-destructive">{fieldErrors.fullName}</p>
+                  )}
+                </div>
+              )}
+
               <div className="space-y-2">
-                <Label htmlFor="email">Seu Email</Label>
+                <Label htmlFor="email">Seu Email *</Label>
                 <Input
                   id="email"
                   type="email"
                   placeholder="seu@email.com"
                   value={email}
-                  onChange={(e) => setEmail(e.target.value)}
+                  onChange={(e) => {
+                    setEmail(e.target.value);
+                    if (fieldErrors.email) {
+                      setFieldErrors(prev => ({ ...prev, email: '' }));
+                    }
+                  }}
                   disabled={isLoading}
-                  autoFocus
+                  autoFocus={!isSignUpMode}
+                  className={fieldErrors.email ? 'border-destructive' : ''}
                 />
+                {fieldErrors.email && (
+                  <p className="text-xs text-destructive">{fieldErrors.email}</p>
+                )}
               </div>
+
+              {/* Phone - Only on signup */}
+              {isSignUpMode && (
+                <div className="space-y-2">
+                  <Label htmlFor="phone">Telefone com DDD *</Label>
+                  <Input
+                    id="phone"
+                    type="tel"
+                    placeholder="27999999999"
+                    value={phone}
+                    onChange={(e) => {
+                      setPhone(e.target.value);
+                      if (fieldErrors.phone) {
+                        setFieldErrors(prev => ({ ...prev, phone: '' }));
+                      }
+                    }}
+                    disabled={isLoading}
+                    className={fieldErrors.phone ? 'border-destructive' : ''}
+                  />
+                  {fieldErrors.phone && (
+                    <p className="text-xs text-destructive">{fieldErrors.phone}</p>
+                  )}
+                  <p className="text-xs text-muted-foreground">
+                    Digite apenas números (ex: 27999999999)
+                  </p>
+                </div>
+              )}
               
               <div className="space-y-2">
-                <Label htmlFor="password">Senha</Label>
+                <Label htmlFor="password">Senha *</Label>
                 <Input
                   id="password"
                   type="password"
                   placeholder={isSignUpMode ? "Mínimo 6 caracteres" : "••••••••"}
                   value={password}
-                  onChange={(e) => setPassword(e.target.value)}
+                  onChange={(e) => {
+                    setPassword(e.target.value);
+                    if (fieldErrors.password) {
+                      setFieldErrors(prev => ({ ...prev, password: '' }));
+                    }
+                  }}
                   disabled={isLoading}
                   minLength={6}
+                  className={fieldErrors.password ? 'border-destructive' : ''}
                 />
+                {fieldErrors.password && (
+                  <p className="text-xs text-destructive">{fieldErrors.password}</p>
+                )}
                 {!isSignUpMode && (
                   <p className="text-xs text-muted-foreground">
                     Seus dados são protegidos e criptografados.
@@ -182,6 +349,9 @@ const Login = () => {
                 onClick={() => {
                   setIsSignUpMode(!isSignUpMode);
                   setPassword('');
+                  setFullName('');
+                  setPhone('');
+                  setFieldErrors({});
                 }}
                 disabled={isLoading}
                 className="text-sm text-muted-foreground hover:text-foreground transition-colors"

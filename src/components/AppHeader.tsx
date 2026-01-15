@@ -1,15 +1,15 @@
 import { Link, useLocation } from 'react-router-dom';
 import { useAuth } from '@/contexts/AuthContext';
 import { Button } from '@/components/ui/button';
-import { BookOpen, Settings, History, LayoutDashboard, LogOut, Menu, X, MessageCircle } from 'lucide-react';
+import { BookOpen, Settings, History, LayoutDashboard, LogOut, Menu, X, MessageCircle, Headphones } from 'lucide-react';
 import { useState } from 'react';
-
-const WHATSAPP_SUPPORT_URL = 'https://wa.me/5511999999999'; // Substitua pelo seu número
+import { getWhatsAppUrl } from '@/lib/whatsapp';
 
 export function AppHeader() {
   const { user, signOut } = useAuth();
   const location = useLocation();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const whatsappUrl = getWhatsAppUrl();
 
   const navItems = [
     { path: '/app', label: 'Kanban', icon: LayoutDashboard },
@@ -54,9 +54,27 @@ export function AppHeader() {
               Olá, <span className="font-medium text-foreground">{user?.email?.split('@')[0]}</span>
             </span>
             
-            <a href={WHATSAPP_SUPPORT_URL} target="_blank" rel="noopener noreferrer">
-              <Button variant="ghost" size="icon" title="Suporte via WhatsApp" className="text-success hover:text-success">
+            {/* Prominent WhatsApp Support Button */}
+            <a href={whatsappUrl} target="_blank" rel="noopener noreferrer">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className="gap-2 border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white transition-all hidden sm:flex"
+              >
                 <MessageCircle className="w-4 h-4" />
+                <span>Suporte</span>
+              </Button>
+            </a>
+            
+            {/* Mobile WhatsApp Icon */}
+            <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="sm:hidden">
+              <Button 
+                variant="ghost" 
+                size="icon" 
+                className="text-[#25D366] hover:text-[#20BD5A] hover:bg-[#25D366]/10"
+                title="Suporte via WhatsApp"
+              >
+                <MessageCircle className="w-5 h-5" />
               </Button>
             </a>
             
@@ -95,6 +113,17 @@ export function AppHeader() {
                   </Button>
                 </Link>
               ))}
+              
+              {/* WhatsApp in mobile menu */}
+              <a href={whatsappUrl} target="_blank" rel="noopener noreferrer" className="mt-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2 border-[#25D366] text-[#25D366] hover:bg-[#25D366] hover:text-white"
+                >
+                  <Headphones className="w-4 h-4" />
+                  Suporte via WhatsApp
+                </Button>
+              </a>
             </div>
           </nav>
         )}

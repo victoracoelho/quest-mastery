@@ -11,6 +11,7 @@ import {
   Sparkles,
   LayoutDashboard
 } from 'lucide-react';
+import { WhatsAppButton } from '@/components/WhatsAppButton';
 
 const Landing = () => {
   return (
@@ -240,6 +241,9 @@ const Landing = () => {
           <p>© 2024 RevisaQuest. Feito com 💜 para concurseiros.</p>
         </div>
       </footer>
+
+      {/* Floating WhatsApp Button */}
+      <WhatsAppButton variant="floating" />
     </div>
   );
 };
