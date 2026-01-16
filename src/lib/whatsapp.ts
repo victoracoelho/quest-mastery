@@ -1,8 +1,7 @@
-// WhatsApp configuration
-// Set via VITE_WHATSAPP_NUMBER and VITE_WHATSAPP_MESSAGE env vars
+// WhatsApp configuration - hardcoded for reliability
 
-const WHATSAPP_NUMBER = import.meta.env.VITE_WHATSAPP_NUMBER || '5527996154657';
-const WHATSAPP_MESSAGE = import.meta.env.VITE_WHATSAPP_MESSAGE || 'Olá! Gostaria de tirar uma dúvida.';
+const WHATSAPP_NUMBER = '5527996154657';
+const WHATSAPP_MESSAGE = 'Olá! Gostaria de tirar uma dúvida sobre o RevisaQuest.';
 
 /**
  * Get the WhatsApp URL with the configured number and message

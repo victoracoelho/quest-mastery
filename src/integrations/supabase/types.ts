@@ -14,6 +14,36 @@ export type Database = {
   }
   public: {
     Tables: {
+      daily_plans: {
+        Row: {
+          created_at: string
+          date_iso: string
+          id: string
+          topic_ids_completed: string[]
+          topic_ids_selected: string[]
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          date_iso: string
+          id?: string
+          topic_ids_completed?: string[]
+          topic_ids_selected?: string[]
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          date_iso?: string
+          id?: string
+          topic_ids_completed?: string[]
+          topic_ids_selected?: string[]
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       profiles: {
         Row: {
           created_at: string | null
@@ -83,6 +113,77 @@ export type Database = {
         }
         Relationships: []
       }
+      review_logs: {
+        Row: {
+          correct_answers: number
+          created_at: string
+          id: string
+          next_review_at_computed: string
+          review_note: string | null
+          reviewed_at: string
+          score_percent: number
+          topic_id: string
+          user_id: string
+        }
+        Insert: {
+          correct_answers: number
+          created_at?: string
+          id?: string
+          next_review_at_computed: string
+          review_note?: string | null
+          reviewed_at?: string
+          score_percent: number
+          topic_id: string
+          user_id: string
+        }
+        Update: {
+          correct_answers?: number
+          created_at?: string
+          id?: string
+          next_review_at_computed?: string
+          review_note?: string | null
+          reviewed_at?: string
+          score_percent?: number
+          topic_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "review_logs_topic_id_fkey"
+            columns: ["topic_id"]
+            isOneToOne: false
+            referencedRelation: "topics"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      subjects: {
+        Row: {
+          created_at: string
+          id: string
+          is_active: boolean
+          name: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          name?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
       subscriptions: {
         Row: {
           created_at: string
@@ -114,6 +215,83 @@ export type Database = {
           status?: string
           stripe_customer_id?: string | null
           stripe_subscription_id?: string | null
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: []
+      }
+      topics: {
+        Row: {
+          created_at: string
+          id: string
+          last_reviewed_at: string | null
+          last_score_percent: number | null
+          next_review_at: string | null
+          notes: string | null
+          subject_id: string
+          title: string
+          total_reviews: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          last_reviewed_at?: string | null
+          last_score_percent?: number | null
+          next_review_at?: string | null
+          notes?: string | null
+          subject_id: string
+          title: string
+          total_reviews?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          last_reviewed_at?: string | null
+          last_score_percent?: number | null
+          next_review_at?: string | null
+          notes?: string | null
+          subject_id?: string
+          title?: string
+          total_reviews?: number
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "topics_subject_id_fkey"
+            columns: ["subject_id"]
+            isOneToOne: false
+            referencedRelation: "subjects"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_settings: {
+        Row: {
+          cards_per_day: number
+          created_at: string
+          id: string
+          questions_per_topic: number
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          cards_per_day?: number
+          created_at?: string
+          id?: string
+          questions_per_topic?: number
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          cards_per_day?: number
+          created_at?: string
+          id?: string
+          questions_per_topic?: number
           updated_at?: string
           user_id?: string
         }

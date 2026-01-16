@@ -19,62 +19,103 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { Settings as SettingsType } from '@/types';
-import { getSettingsByUser, updateSettings } from '@/repositories/settingsRepository';
+import { getOrCreateSettings, updateSettings, UserSettings } from '@/repositories/supabaseSettingsRepository';
 import { useToast } from '@/hooks/use-toast';
 import { useNavigate } from 'react-router-dom';
 import { Settings, Save, Trash2, LogOut, Info, CreditCard, Crown, Loader2 } from 'lucide-react';
+import { supabase } from '@/integrations/supabase/client';
 
 const SettingsPage = () => {
   const { user, signOut } = useAuth();
-  const { subscribed, status, priceId, currentPeriodEnd, openCustomerPortal, isMonthly, isYearly } = useSubscription();
+  const { subscribed, status, priceId, currentPeriodEnd, openCustomerPortal, isMonthly, isYearly, isAdmin } = useSubscription();
   const { toast } = useToast();
   const navigate = useNavigate();
   
-  const [settings, setSettings] = useState<SettingsType | null>(null);
+  const [settings, setSettings] = useState<UserSettings | null>(null);
   const [cardsPorDia, setCardsPorDia] = useState(3);
   const [hasChanges, setHasChanges] = useState(false);
   const [portalLoading, setPortalLoading] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
-    const userSettings = getSettingsByUser(user.id);
-    setSettings(userSettings);
-    setCardsPorDia(userSettings.cardsPorDia);
+    
+    const loadSettings = async () => {
+      try {
+        const userSettings = await getOrCreateSettings(user.id);
+        setSettings(userSettings);
+        setCardsPorDia(userSettings.cards_per_day);
+      } catch (error) {
+        console.error('Error loading settings:', error);
+      } finally {
+        setIsLoading(false);
+      }
+    };
+    
+    loadSettings();
   }, [user]);
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!user) return;
     
-    const value = Math.max(1, Math.min(20, cardsPorDia));
-    updateSettings(user.id, { cardsPorDia: value });
-    setCardsPorDia(value);
-    setHasChanges(false);
-    
-    toast({
-      title: 'Configurações salvas',
-      description: `Agora você verá ${value} tópico(s) por dia.`,
-    });
+    try {
+      const value = Math.max(1, Math.min(20, cardsPorDia));
+      await updateSettings(user.id, { cards_per_day: value });
+      setCardsPorDia(value);
+      setHasChanges(false);
+      
+      toast({
+        title: 'Configurações salvas',
+        description: `Agora você verá ${value} tópico(s) por dia.`,
+      });
+    } catch (error) {
+      console.error('Error saving settings:', error);
+      toast({
+        title: 'Erro ao salvar',
+        description: 'Tente novamente',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleClearData = () => {
-    // Clear all localStorage data for this app
-    const keysToRemove: string[] = [];
-    for (let i = 0; i < localStorage.length; i++) {
-      const key = localStorage.key(i);
-      if (key && key.startsWith('revisaquest_')) {
-        keysToRemove.push(key);
+  const handleClearData = async () => {
+    if (!user) return;
+    
+    try {
+      // Delete user data from Supabase tables
+      await Promise.all([
+        supabase.from('review_logs').delete().eq('user_id', user.id),
+        supabase.from('daily_plans').delete().eq('user_id', user.id),
+        supabase.from('topics').delete().eq('user_id', user.id),
+        supabase.from('subjects').delete().eq('user_id', user.id),
+        supabase.from('user_settings').delete().eq('user_id', user.id),
+      ]);
+      
+      // Also clear localStorage as fallback
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (key && key.startsWith('revisaquest_')) {
+          keysToRemove.push(key);
+        }
       }
+      keysToRemove.forEach(key => localStorage.removeItem(key));
+      
+      toast({
+        title: 'Dados limpos',
+        description: 'Todos os seus dados foram removidos.',
+      });
+      
+      signOut();
+      navigate('/login');
+    } catch (error) {
+      console.error('Error clearing data:', error);
+      toast({
+        title: 'Erro ao limpar dados',
+        description: 'Tente novamente',
+        variant: 'destructive',
+      });
     }
-    keysToRemove.forEach(key => localStorage.removeItem(key));
-    
-    toast({
-      title: 'Dados limpos',
-      description: 'Todos os seus dados foram removidos.',
-    });
-    
-    signOut();
-    navigate('/login');
   };
 
   const handleLogout = () => {
@@ -84,7 +125,7 @@ const SettingsPage = () => {
 
   const handleCardsPorDiaChange = (value: number) => {
     setCardsPorDia(value);
-    setHasChanges(value !== settings?.cardsPorDia);
+    setHasChanges(value !== settings?.cards_per_day);
   };
 
   const handleOpenPortal = async () => {
@@ -103,6 +144,7 @@ const SettingsPage = () => {
   };
 
   const getPlanName = () => {
+    if (isAdmin) return 'Admin';
     if (isMonthly) return 'Mensal';
     if (isYearly) return 'Anual';
     return 'Ativo';
@@ -116,6 +158,17 @@ const SettingsPage = () => {
       year: 'numeric'
     });
   };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <AppHeader />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -207,11 +260,11 @@ const SettingsPage = () => {
                 </div>
                 <div className="flex items-center justify-between">
                   <span className="text-sm text-muted-foreground">Status</span>
-                  <Badge variant={status === 'active' ? 'default' : 'secondary'}>
-                    {status === 'active' ? 'Ativo' : status === 'trialing' ? 'Período de teste' : status || 'Inativo'}
+                  <Badge variant={status === 'active' || isAdmin ? 'default' : 'secondary'}>
+                    {isAdmin ? 'Admin' : status === 'active' ? 'Ativo' : status === 'trialing' ? 'Período de teste' : status || 'Inativo'}
                   </Badge>
                 </div>
-                {currentPeriodEnd && (
+                {currentPeriodEnd && !isAdmin && (
                   <div className="flex items-center justify-between">
                     <span className="text-sm text-muted-foreground">Próxima cobrança</span>
                     <span className="text-sm font-medium">{formatDate(currentPeriodEnd)}</span>
@@ -219,27 +272,31 @@ const SettingsPage = () => {
                 )}
               </div>
               
-              <Button 
-                onClick={handleOpenPortal} 
-                variant="outline" 
-                className="w-full"
-                disabled={portalLoading}
-              >
-                {portalLoading ? (
-                  <>
-                    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                    Abrindo...
-                  </>
-                ) : (
-                  <>
-                    <CreditCard className="w-4 h-4 mr-2" />
-                    Gerenciar Assinatura
-                  </>
-                )}
-              </Button>
-              <p className="text-xs text-muted-foreground text-center">
-                Altere seu plano, método de pagamento ou cancele sua assinatura
-              </p>
+              {!isAdmin && (
+                <>
+                  <Button 
+                    onClick={handleOpenPortal} 
+                    variant="outline" 
+                    className="w-full"
+                    disabled={portalLoading}
+                  >
+                    {portalLoading ? (
+                      <>
+                        <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                        Abrindo...
+                      </>
+                    ) : (
+                      <>
+                        <CreditCard className="w-4 h-4 mr-2" />
+                        Gerenciar Assinatura
+                      </>
+                    )}
+                  </Button>
+                  <p className="text-xs text-muted-foreground text-center">
+                    Altere seu plano, método de pagamento ou cancele sua assinatura
+                  </p>
+                </>
+              )}
             </CardContent>
           </Card>
 
