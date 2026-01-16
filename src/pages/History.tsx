@@ -5,11 +5,10 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
-import { ReviewLog, DailyPlan, Topic, Subject } from '@/types';
-import { getReviewLogsByUser } from '@/repositories/reviewLogRepository';
-import { getDailyPlansByUser } from '@/repositories/dailyPlanRepository';
-import { getTopicById } from '@/repositories/topicRepository';
-import { getSubjectById } from '@/repositories/subjectRepository';
+import { getReviewLogsByUser, ReviewLog } from '@/repositories/supabaseReviewLogRepository';
+import { getDailyPlansByUser, DailyPlan } from '@/repositories/supabaseDailyPlanRepository';
+import { getTopicById, Topic } from '@/repositories/supabaseTopicRepository';
+import { getSubjectById, Subject } from '@/repositories/supabaseSubjectRepository';
 import { formatDate } from '@/lib/storage';
 import { getPerformanceColor } from '@/services/scheduler';
 import { cn } from '@/lib/utils';
@@ -18,8 +17,8 @@ import {
   Calendar, 
   TrendingUp,
   CheckCircle2,
-  XCircle,
-  Clock
+  Clock,
+  Loader2
 } from 'lucide-react';
 
 const HistoryPage = () => {
@@ -29,41 +28,71 @@ const HistoryPage = () => {
   const [dailyPlans, setDailyPlans] = useState<DailyPlan[]>([]);
   const [topicsCache, setTopicsCache] = useState<Record<string, Topic | null>>({});
   const [subjectsCache, setSubjectsCache] = useState<Record<string, Subject | null>>({});
+  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     if (!user) return;
     
-    const logs = getReviewLogsByUser(user.id).sort(
-      (a, b) => new Date(b.reviewedAt).getTime() - new Date(a.reviewedAt).getTime()
-    );
-    setReviewLogs(logs);
-    
-    const plans = getDailyPlansByUser(user.id);
-    setDailyPlans(plans);
-    
-    // Build caches
-    const topicIds = new Set([
-      ...logs.map(l => l.topicId),
-      ...plans.flatMap(p => p.topicIdsSelected)
-    ]);
-    
-    const newTopicsCache: Record<string, Topic | null> = {};
-    const newSubjectsCache: Record<string, Subject | null> = {};
-    
-    topicIds.forEach(id => {
-      const topic = getTopicById(id) || null;
-      newTopicsCache[id] = topic;
-      if (topic) {
-        newSubjectsCache[topic.subjectId] = getSubjectById(topic.subjectId) || null;
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const [logs, plans] = await Promise.all([
+          getReviewLogsByUser(user.id),
+          getDailyPlansByUser(user.id),
+        ]);
+        
+        // Sort logs by date
+        logs.sort((a, b) => new Date(b.reviewed_at).getTime() - new Date(a.reviewed_at).getTime());
+        setReviewLogs(logs);
+        setDailyPlans(plans);
+        
+        // Build caches
+        const topicIds = new Set([
+          ...logs.map(l => l.topic_id),
+          ...plans.flatMap(p => p.topic_ids_selected)
+        ]);
+        
+        const newTopicsCache: Record<string, Topic | null> = {};
+        const newSubjectsCache: Record<string, Subject | null> = {};
+        
+        await Promise.all(
+          Array.from(topicIds).map(async (id) => {
+            const topic = await getTopicById(id);
+            newTopicsCache[id] = topic;
+            if (topic) {
+              if (!newSubjectsCache[topic.subject_id]) {
+                const subject = await getSubjectById(topic.subject_id);
+                newSubjectsCache[topic.subject_id] = subject;
+              }
+            }
+          })
+        );
+        
+        setTopicsCache(newTopicsCache);
+        setSubjectsCache(newSubjectsCache);
+      } catch (error) {
+        console.error('Error loading history:', error);
+      } finally {
+        setIsLoading(false);
       }
-    });
+    };
     
-    setTopicsCache(newTopicsCache);
-    setSubjectsCache(newSubjectsCache);
+    loadData();
   }, [user]);
 
   const getTopic = (topicId: string) => topicsCache[topicId];
   const getSubject = (subjectId: string) => subjectsCache[subjectId];
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <AppHeader />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -105,8 +134,8 @@ const HistoryPage = () => {
               <ScrollArea className="h-[600px]">
                 <div className="space-y-3 pr-4">
                   {reviewLogs.map((log) => {
-                    const topic = getTopic(log.topicId);
-                    const subject = topic ? getSubject(topic.subjectId) : null;
+                    const topic = getTopic(log.topic_id);
+                    const subject = topic ? getSubject(topic.subject_id) : null;
                     
                     return (
                       <Card key={log.id}>
@@ -115,13 +144,13 @@ const HistoryPage = () => {
                             <div className="flex-1 min-w-0">
                               <div className="flex items-center gap-2 mb-1">
                                 <span className="text-xs text-muted-foreground">
-                                  {formatDate(log.reviewedAt.split('T')[0])}
+                                  {formatDate(log.reviewed_at.split('T')[0])}
                                 </span>
                                 <span className={cn(
                                   'text-sm font-bold',
-                                  getPerformanceColor(log.correctAnswers)
+                                  getPerformanceColor(log.correct_answers)
                                 )}>
-                                  {log.scorePercent}%
+                                  {log.score_percent}%
                                 </span>
                               </div>
                               
@@ -135,19 +164,19 @@ const HistoryPage = () => {
                                 </p>
                               )}
                               
-                              {log.reviewNote && (
+                              {log.review_note && (
                                 <p className="text-xs text-muted-foreground mt-2 italic">
-                                  "{log.reviewNote}"
+                                  "{log.review_note}"
                                 </p>
                               )}
                             </div>
                             
                             <div className="text-right flex-shrink-0">
                               <div className="text-2xl font-bold">
-                                {log.correctAnswers}<span className="text-muted-foreground text-sm">/10</span>
+                                {log.correct_answers}<span className="text-muted-foreground text-sm">/10</span>
                               </div>
                               <p className="text-xs text-muted-foreground">
-                                Próx: {formatDate(log.nextReviewAtComputed)}
+                                Próx: {formatDate(log.next_review_at_computed.split('T')[0])}
                               </p>
                             </div>
                           </div>
@@ -176,8 +205,8 @@ const HistoryPage = () => {
               <ScrollArea className="h-[600px]">
                 <div className="space-y-4 pr-4">
                   {dailyPlans.map((plan) => {
-                    const total = plan.topicIdsSelected.length;
-                    const completed = plan.topicIdsCompleted.length;
+                    const total = plan.topic_ids_selected.length;
+                    const completed = plan.topic_ids_completed.length;
                     const completionRate = total > 0 ? Math.round((completed / total) * 100) : 0;
                     
                     return (
@@ -186,7 +215,7 @@ const HistoryPage = () => {
                           <div className="flex items-center justify-between">
                             <CardTitle className="text-lg flex items-center gap-2">
                               <Calendar className="w-5 h-5 text-primary" />
-                              {formatDate(plan.dateISO)}
+                              {formatDate(plan.date_iso)}
                             </CardTitle>
                             <Badge 
                               variant={completionRate === 100 ? 'default' : 'secondary'}
@@ -198,10 +227,10 @@ const HistoryPage = () => {
                         </CardHeader>
                         <CardContent className="pt-2">
                           <div className="space-y-2">
-                            {plan.topicIdsSelected.map((topicId) => {
+                            {plan.topic_ids_selected.map((topicId) => {
                               const topic = getTopic(topicId);
-                              const subject = topic ? getSubject(topic.subjectId) : null;
-                              const isCompleted = plan.topicIdsCompleted.includes(topicId);
+                              const subject = topic ? getSubject(topic.subject_id) : null;
+                              const isCompleted = plan.topic_ids_completed.includes(topicId);
                               
                               return (
                                 <div 

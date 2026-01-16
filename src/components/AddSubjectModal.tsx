@@ -12,10 +12,10 @@ import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Label } from '@/components/ui/label';
 import { useAuth } from '@/contexts/AuthContext';
-import { createSubject } from '@/repositories/subjectRepository';
-import { createTopicsBatch } from '@/repositories/topicRepository';
+import { createSubject } from '@/repositories/supabaseSubjectRepository';
+import { createTopicsBatch } from '@/repositories/supabaseTopicRepository';
 import { useToast } from '@/hooks/use-toast';
-import { Plus, BookOpen } from 'lucide-react';
+import { Plus, BookOpen, Loader2 } from 'lucide-react';
 
 interface AddSubjectModalProps {
   isOpen: boolean;
@@ -30,7 +30,7 @@ export function AddSubjectModal({ isOpen, onClose, onSuccess }: AddSubjectModalP
   const [topicsText, setTopicsText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!user) return;
     
     const name = subjectName.trim();
@@ -61,10 +61,10 @@ export function AddSubjectModal({ isOpen, onClose, onSuccess }: AddSubjectModalP
 
     try {
       // Create subject
-      const subject = createSubject(user.id, name);
+      const subject = await createSubject(user.id, name);
       
       // Create topics in batch
-      createTopicsBatch(user.id, subject.id, topics);
+      await createTopicsBatch(user.id, subject.id, topics);
 
       toast({
         title: 'Matéria criada!',
@@ -77,6 +77,7 @@ export function AddSubjectModal({ isOpen, onClose, onSuccess }: AddSubjectModalP
       onSuccess();
       onClose();
     } catch (error) {
+      console.error('Error creating subject:', error);
       toast({
         title: 'Erro',
         description: 'Não foi possível criar a matéria.',
@@ -119,6 +120,7 @@ export function AddSubjectModal({ isOpen, onClose, onSuccess }: AddSubjectModalP
               placeholder="Ex: Direito Constitucional"
               value={subjectName}
               onChange={(e) => setSubjectName(e.target.value)}
+              disabled={isLoading}
             />
           </div>
 
@@ -136,6 +138,7 @@ export function AddSubjectModal({ isOpen, onClose, onSuccess }: AddSubjectModalP
               onChange={(e) => setTopicsText(e.target.value)}
               rows={8}
               className="font-mono text-sm"
+              disabled={isLoading}
             />
             <p className="text-xs text-muted-foreground">
               💡 Dica: Cole a lista de tópicos do edital diretamente aqui!
@@ -148,8 +151,17 @@ export function AddSubjectModal({ isOpen, onClose, onSuccess }: AddSubjectModalP
             Cancelar
           </Button>
           <Button onClick={handleSubmit} disabled={isLoading} className="gradient-primary text-white">
-            <Plus className="w-4 h-4 mr-2" />
-            Criar Matéria
+            {isLoading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                Criando...
+              </>
+            ) : (
+              <>
+                <Plus className="w-4 h-4 mr-2" />
+                Criar Matéria
+              </>
+            )}
           </Button>
         </DialogFooter>
       </DialogContent>

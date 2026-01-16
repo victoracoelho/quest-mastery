@@ -4,7 +4,7 @@ import { AppHeader } from '@/components/AppHeader';
 import { AddSubjectModal } from '@/components/AddSubjectModal';
 import { DeleteSubjectDialog } from '@/components/DeleteSubjectDialog';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import {
   Accordion,
@@ -12,10 +12,9 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from '@/components/ui/accordion';
-import { Subject, Topic } from '@/types';
-import { getSubjectsByUser, deleteSubject, updateSubject } from '@/repositories/subjectRepository';
-import { getTopicsBySubject, deleteTopic, deleteTopicsBySubject } from '@/repositories/topicRepository';
-import { deleteReviewLogsByTopic } from '@/repositories/reviewLogRepository';
+import { getSubjectsByUser, deleteSubject, updateSubject, Subject } from '@/repositories/supabaseSubjectRepository';
+import { getTopicsBySubject, deleteTopic, deleteTopicsBySubject, Topic } from '@/repositories/supabaseTopicRepository';
+import { deleteReviewLogsByTopic } from '@/repositories/supabaseReviewLogRepository';
 import { useToast } from '@/hooks/use-toast';
 import { 
   Plus, 
@@ -25,7 +24,7 @@ import {
   Check, 
   X,
   FileText,
-  ChevronRight
+  Loader2
 } from 'lucide-react';
 
 const Manage = () => {
@@ -33,15 +32,43 @@ const Manage = () => {
   const { toast } = useToast();
   
   const [subjects, setSubjects] = useState<Subject[]>([]);
+  const [topicsMap, setTopicsMap] = useState<Record<string, Topic[]>>({});
   const [addModalOpen, setAddModalOpen] = useState(false);
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
   const [subjectToDelete, setSubjectToDelete] = useState<Subject | null>(null);
   const [editingSubjectId, setEditingSubjectId] = useState<string | null>(null);
   const [editingSubjectName, setEditingSubjectName] = useState('');
+  const [isLoading, setIsLoading] = useState(true);
 
-  const loadSubjects = () => {
+  const loadSubjects = async () => {
     if (!user) return;
-    setSubjects(getSubjectsByUser(user.id));
+    
+    try {
+      const subjectsData = await getSubjectsByUser(user.id);
+      setSubjects(subjectsData);
+      
+      // Load topics for each subject
+      const topicsPromises = subjectsData.map(async (subject) => {
+        const topics = await getTopicsBySubject(subject.id);
+        return { subjectId: subject.id, topics };
+      });
+      
+      const topicsResults = await Promise.all(topicsPromises);
+      const newTopicsMap: Record<string, Topic[]> = {};
+      topicsResults.forEach(({ subjectId, topics }) => {
+        newTopicsMap[subjectId] = topics;
+      });
+      setTopicsMap(newTopicsMap);
+    } catch (error) {
+      console.error('Error loading subjects:', error);
+      toast({
+        title: 'Erro ao carregar matérias',
+        description: 'Tente recarregar a página',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -53,28 +80,38 @@ const Manage = () => {
     setDeleteDialogOpen(true);
   };
 
-  const handleDelete = (keepHistory: boolean) => {
+  const handleDelete = async (keepHistory: boolean) => {
     if (!subjectToDelete) return;
     
-    if (!keepHistory) {
-      // Delete all topics and their review logs
-      const topics = getTopicsBySubject(subjectToDelete.id);
-      for (const topic of topics) {
-        deleteReviewLogsByTopic(topic.id);
+    try {
+      if (!keepHistory) {
+        // Delete all topics and their review logs
+        const topics = topicsMap[subjectToDelete.id] || [];
+        for (const topic of topics) {
+          await deleteReviewLogsByTopic(topic.id);
+        }
+        await deleteTopicsBySubject(subjectToDelete.id);
       }
-      deleteTopicsBySubject(subjectToDelete.id);
+      
+      await deleteSubject(subjectToDelete.id, keepHistory);
+      
+      toast({
+        title: keepHistory ? 'Matéria arquivada' : 'Matéria excluída',
+        description: keepHistory 
+          ? 'A matéria foi arquivada e o histórico foi mantido.' 
+          : 'A matéria e todos os dados foram excluídos.',
+      });
+      
+      await loadSubjects();
+    } catch (error) {
+      console.error('Error deleting subject:', error);
+      toast({
+        title: 'Erro ao excluir',
+        description: 'Tente novamente',
+        variant: 'destructive',
+      });
     }
     
-    deleteSubject(subjectToDelete.id, keepHistory);
-    
-    toast({
-      title: keepHistory ? 'Matéria arquivada' : 'Matéria excluída',
-      description: keepHistory 
-        ? 'A matéria foi arquivada e o histórico foi mantido.' 
-        : 'A matéria e todos os dados foram excluídos.',
-    });
-    
-    loadSubjects();
     setDeleteDialogOpen(false);
     setSubjectToDelete(null);
   };
@@ -84,16 +121,26 @@ const Manage = () => {
     setEditingSubjectName(subject.name);
   };
 
-  const handleEditSave = () => {
+  const handleEditSave = async () => {
     if (!editingSubjectId || !editingSubjectName.trim()) return;
     
-    updateSubject(editingSubjectId, { name: editingSubjectName.trim() });
-    toast({
-      title: 'Matéria atualizada',
-      description: 'O nome da matéria foi alterado com sucesso.',
-    });
+    try {
+      await updateSubject(editingSubjectId, { name: editingSubjectName.trim() });
+      toast({
+        title: 'Matéria atualizada',
+        description: 'O nome da matéria foi alterado com sucesso.',
+      });
+      
+      await loadSubjects();
+    } catch (error) {
+      console.error('Error updating subject:', error);
+      toast({
+        title: 'Erro ao atualizar',
+        description: 'Tente novamente',
+        variant: 'destructive',
+      });
+    }
     
-    loadSubjects();
     setEditingSubjectId(null);
     setEditingSubjectName('');
   };
@@ -103,21 +150,48 @@ const Manage = () => {
     setEditingSubjectName('');
   };
 
-  const handleDeleteTopic = (topicId: string, topicTitle: string) => {
-    deleteReviewLogsByTopic(topicId);
-    deleteTopic(topicId);
-    
-    toast({
-      title: 'Tópico excluído',
-      description: `"${topicTitle}" foi removido.`,
-    });
-    
-    loadSubjects();
+  const handleDeleteTopic = async (topicId: string, topicTitle: string) => {
+    try {
+      await deleteReviewLogsByTopic(topicId);
+      await deleteTopic(topicId);
+      
+      toast({
+        title: 'Tópico excluído',
+        description: `"${topicTitle}" foi removido.`,
+      });
+      
+      await loadSubjects();
+    } catch (error) {
+      console.error('Error deleting topic:', error);
+      toast({
+        title: 'Erro ao excluir tópico',
+        description: 'Tente novamente',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const totalTopics = subjects.reduce((acc, subject) => {
-    return acc + getTopicsBySubject(subject.id).length;
-  }, 0);
+  const totalTopics = Object.values(topicsMap).reduce((acc, topics) => acc + topics.length, 0);
+
+  // Convert to legacy format for dialogs
+  const legacySubjectToDelete = subjectToDelete ? {
+    id: subjectToDelete.id,
+    userId: subjectToDelete.user_id,
+    name: subjectToDelete.name,
+    createdAt: subjectToDelete.created_at,
+    isActive: subjectToDelete.is_active,
+  } : null;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <AppHeader />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -160,7 +234,7 @@ const Manage = () => {
         {subjects.length > 0 && (
           <Accordion type="multiple" className="space-y-4">
             {subjects.map((subject) => {
-              const topics = getTopicsBySubject(subject.id);
+              const topics = topicsMap[subject.id] || [];
               const isEditing = editingSubjectId === subject.id;
               
               return (
@@ -239,9 +313,9 @@ const Manage = () => {
                               <span className="text-sm">{topic.title}</span>
                             </div>
                             <div className="flex items-center gap-2">
-                              {topic.lastScorePercent !== null && (
+                              {topic.last_score_percent !== null && (
                                 <span className="text-xs text-muted-foreground">
-                                  Último: {topic.lastScorePercent}%
+                                  Último: {topic.last_score_percent}%
                                 </span>
                               )}
                               <Button
@@ -278,7 +352,7 @@ const Manage = () => {
           setDeleteDialogOpen(false);
           setSubjectToDelete(null);
         }}
-        subject={subjectToDelete}
+        subject={legacySubjectToDelete as any}
         onDelete={handleDelete}
       />
     </div>

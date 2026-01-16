@@ -1,23 +1,30 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { Check, Loader2, Crown, Zap } from 'lucide-react';
+import { Check, Loader2, Crown, Zap, LogOut, ArrowRight, RefreshCw } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { useSubscription, PRICE_IDS } from '@/contexts/SubscriptionContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { useToast } from '@/hooks/use-toast';
 
 const Pricing = () => {
   const navigate = useNavigate();
   const { toast } = useToast();
-  const { subscribed, createCheckout, loading: subLoading, priceId } = useSubscription();
+  const { user, signOut } = useAuth();
+  const { subscribed, hasAppAccess, createCheckout, checkSubscription, loading: subLoading } = useSubscription();
   const [loadingPlan, setLoadingPlan] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+
+  // Auto-refresh subscription status on mount and periodically
+  useEffect(() => {
+    const interval = setInterval(() => {
+      checkSubscription();
+    }, 5000); // Check every 5 seconds while on pricing page
+    
+    return () => clearInterval(interval);
+  }, [checkSubscription]);
 
   const handleSubscribe = async (selectedPriceId: string) => {
-    if (subscribed) {
-      navigate('/app');
-      return;
-    }
-
     try {
       setLoadingPlan(selectedPriceId);
       await createCheckout(selectedPriceId);
@@ -29,6 +36,42 @@ const Pricing = () => {
       });
     } finally {
       setLoadingPlan(null);
+    }
+  };
+
+  const handleRefresh = async () => {
+    setRefreshing(true);
+    await checkSubscription();
+    setRefreshing(false);
+    
+    if (hasAppAccess) {
+      toast({
+        title: 'Assinatura confirmada!',
+        description: 'Redirecionando para o app...',
+      });
+      setTimeout(() => navigate('/app'), 1000);
+    } else {
+      toast({
+        title: 'Status atualizado',
+        description: 'Sua assinatura ainda não foi confirmada.',
+      });
+    }
+  };
+
+  const handleLogout = () => {
+    signOut();
+    navigate('/login');
+  };
+
+  const handleGoToApp = () => {
+    if (hasAppAccess) {
+      navigate('/app');
+    } else {
+      toast({
+        title: 'Acesso negado',
+        description: 'Você precisa de uma assinatura ativa para acessar o app.',
+        variant: 'destructive',
+      });
     }
   };
 
@@ -50,14 +93,67 @@ const Pricing = () => {
     );
   }
 
-  if (subscribed) {
-    navigate('/app');
-    return null;
-  }
-
   return (
     <div className="min-h-screen bg-gradient-to-b from-background to-muted/30">
-      <div className="container mx-auto px-4 py-16">
+      <div className="container mx-auto px-4 py-8">
+        {/* Top Bar with Actions */}
+        <div className="flex items-center justify-between mb-8">
+          <div className="text-sm text-muted-foreground">
+            Logado como: <span className="font-medium text-foreground">{user?.email}</span>
+          </div>
+          <div className="flex items-center gap-3">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={handleRefresh}
+              disabled={refreshing}
+            >
+              <RefreshCw className={`w-4 h-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
+              Verificar Status
+            </Button>
+            {hasAppAccess && (
+              <Button
+                size="sm"
+                onClick={handleGoToApp}
+                className="gradient-primary text-white"
+              >
+                <ArrowRight className="w-4 h-4 mr-2" />
+                Ir para o App
+              </Button>
+            )}
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleLogout}
+            >
+              <LogOut className="w-4 h-4 mr-2" />
+              Sair
+            </Button>
+          </div>
+        </div>
+
+        {/* Success Message if subscribed */}
+        {hasAppAccess && (
+          <Card className="mb-8 border-green-500 bg-green-50 dark:bg-green-950/20">
+            <CardContent className="flex items-center justify-between py-4">
+              <div className="flex items-center gap-3">
+                <Check className="w-6 h-6 text-green-600" />
+                <div>
+                  <p className="font-semibold text-green-700 dark:text-green-400">
+                    Assinatura ativa!
+                  </p>
+                  <p className="text-sm text-green-600 dark:text-green-500">
+                    Você tem acesso completo ao RevisaQuest.
+                  </p>
+                </div>
+              </div>
+              <Button onClick={handleGoToApp} className="gradient-primary text-white">
+                Acessar App
+              </Button>
+            </CardContent>
+          </Card>
+        )}
+
         {/* Header */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold mb-4">
@@ -98,13 +194,15 @@ const Pricing = () => {
                 className="w-full" 
                 size="lg"
                 onClick={() => handleSubscribe(PRICE_IDS.MONTHLY)}
-                disabled={loadingPlan !== null}
+                disabled={loadingPlan !== null || hasAppAccess}
               >
                 {loadingPlan === PRICE_IDS.MONTHLY ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Processando...
                   </>
+                ) : hasAppAccess ? (
+                  'Já assinante'
                 ) : (
                   'Assinar mensal'
                 )}
@@ -148,13 +246,15 @@ const Pricing = () => {
                 className="w-full" 
                 size="lg"
                 onClick={() => handleSubscribe(PRICE_IDS.YEARLY)}
-                disabled={loadingPlan !== null}
+                disabled={loadingPlan !== null || hasAppAccess}
               >
                 {loadingPlan === PRICE_IDS.YEARLY ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Processando...
                   </>
+                ) : hasAppAccess ? (
+                  'Já assinante'
                 ) : (
                   'Assinar anual'
                 )}

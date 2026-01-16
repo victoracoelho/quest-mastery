@@ -6,14 +6,13 @@ import { CompleteReviewModal } from '@/components/CompleteReviewModal';
 import { TopicDetailsDrawer } from '@/components/TopicDetailsDrawer';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
-import { Topic, Subject, DailyPlan } from '@/types';
-import { generateDailyPlan } from '@/services/planGenerator';
+import { generateDailyPlanAsync } from '@/services/planGeneratorAsync';
 import { calculateNextReview } from '@/services/scheduler';
-import { getSubjectsByUser } from '@/repositories/subjectRepository';
-import { getTopicsByUser, updateTopic, getTopicById } from '@/repositories/topicRepository';
-import { createReviewLog } from '@/repositories/reviewLogRepository';
-import { getSettingsByUser } from '@/repositories/settingsRepository';
-import { markTopicCompleted, getDailyPlanByDate } from '@/repositories/dailyPlanRepository';
+import { getSubjectsByUser, Subject } from '@/repositories/supabaseSubjectRepository';
+import { getTopicsByUser, updateTopic, getTopicById, Topic } from '@/repositories/supabaseTopicRepository';
+import { createReviewLog } from '@/repositories/supabaseReviewLogRepository';
+import { getOrCreateSettings } from '@/repositories/supabaseSettingsRepository';
+import { markTopicCompleted, getDailyPlanByDate, DailyPlan } from '@/repositories/supabaseDailyPlanRepository';
 import { getCurrentDateISO, formatDate, addDays } from '@/lib/storage';
 import { useToast } from '@/hooks/use-toast';
 import { 
@@ -24,9 +23,80 @@ import {
   BookOpen,
   Target,
   AlertCircle,
-  Plus
+  Plus,
+  Loader2
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
+
+// Adapter types to match old format for KanbanBoard
+interface LegacyTopic {
+  id: string;
+  userId: string;
+  subjectId: string;
+  title: string;
+  notes: string;
+  createdAt: string;
+  lastReviewedAt: string | null;
+  nextReviewAt: string | null;
+  totalReviews: number;
+  lastScorePercent: number | null;
+}
+
+interface LegacySubject {
+  id: string;
+  userId: string;
+  name: string;
+  createdAt: string;
+  isActive: boolean;
+}
+
+interface LegacyDailyPlan {
+  id: string;
+  userId: string;
+  dateISO: string;
+  topicIdsSelected: string[];
+  topicIdsCompleted: string[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+// Convert DB types to legacy types for KanbanBoard compatibility
+function toLegacyTopic(topic: Topic): LegacyTopic {
+  return {
+    id: topic.id,
+    userId: topic.user_id,
+    subjectId: topic.subject_id,
+    title: topic.title,
+    notes: topic.notes,
+    createdAt: topic.created_at,
+    lastReviewedAt: topic.last_reviewed_at ? topic.last_reviewed_at.split('T')[0] : null,
+    nextReviewAt: topic.next_review_at ? topic.next_review_at.split('T')[0] : null,
+    totalReviews: topic.total_reviews,
+    lastScorePercent: topic.last_score_percent,
+  };
+}
+
+function toLegacySubject(subject: Subject): LegacySubject {
+  return {
+    id: subject.id,
+    userId: subject.user_id,
+    name: subject.name,
+    createdAt: subject.created_at,
+    isActive: subject.is_active,
+  };
+}
+
+function toLegacyPlan(plan: DailyPlan): LegacyDailyPlan {
+  return {
+    id: plan.id,
+    userId: plan.user_id,
+    dateISO: plan.date_iso,
+    topicIdsSelected: plan.topic_ids_selected,
+    topicIdsCompleted: plan.topic_ids_completed,
+    createdAt: plan.created_at,
+    updatedAt: plan.updated_at,
+  };
+}
 
 const App = () => {
   const { user } = useAuth();
@@ -37,6 +107,8 @@ const App = () => {
   const [subjects, setSubjects] = useState<Subject[]>([]);
   const [topics, setTopics] = useState<Topic[]>([]);
   const [isGenerating, setIsGenerating] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [cardsPerDay, setCardsPerDay] = useState(3);
   
   // Modals
   const [completeModalOpen, setCompleteModalOpen] = useState(false);
@@ -46,22 +118,42 @@ const App = () => {
   
   const today = getCurrentDateISO();
   const isToday = selectedDate === today;
-  const settings = user ? getSettingsByUser(user.id) : null;
 
   // Load data
   useEffect(() => {
     if (!user) return;
     
-    setSubjects(getSubjectsByUser(user.id));
-    setTopics(getTopicsByUser(user.id));
+    const loadData = async () => {
+      setIsLoading(true);
+      try {
+        const [subjectsData, topicsData, existingPlan, settings] = await Promise.all([
+          getSubjectsByUser(user.id),
+          getTopicsByUser(user.id),
+          getDailyPlanByDate(user.id, selectedDate),
+          getOrCreateSettings(user.id),
+        ]);
+        
+        setSubjects(subjectsData);
+        setTopics(topicsData);
+        setPlan(existingPlan);
+        setCardsPerDay(settings.cards_per_day);
+      } catch (error) {
+        console.error('Error loading data:', error);
+        toast({
+          title: 'Erro ao carregar dados',
+          description: 'Tente recarregar a página',
+          variant: 'destructive',
+        });
+      } finally {
+        setIsLoading(false);
+      }
+    };
     
-    // Try to load existing plan
-    const existingPlan = getDailyPlanByDate(user.id, selectedDate);
-    setPlan(existingPlan || null);
+    loadData();
   }, [user, selectedDate]);
 
-  const handleGeneratePlan = () => {
-    if (!user || !settings) return;
+  const handleGeneratePlan = async () => {
+    if (!user) return;
     
     if (subjects.length === 0) {
       toast({
@@ -74,87 +166,117 @@ const App = () => {
     
     setIsGenerating(true);
     
-    const result = generateDailyPlan(user.id, selectedDate, settings.cardsPorDia);
-    setPlan(result.plan);
-    
-    if (result.isNew) {
+    try {
+      const result = await generateDailyPlanAsync(user.id, selectedDate, cardsPerDay);
+      setPlan(result.plan);
+      
+      if (result.isNew) {
+        toast({
+          title: 'Plano gerado!',
+          description: `${result.stats.mandatory} revisão(ões), ${result.stats.new} novo(s), ${result.stats.early} adiantado(s)`,
+        });
+      } else {
+        toast({
+          title: 'Plano carregado',
+          description: 'O plano deste dia já foi gerado anteriormente.',
+        });
+      }
+    } catch (error) {
+      console.error('Error generating plan:', error);
       toast({
-        title: 'Plano gerado!',
-        description: `${result.stats.mandatory} revisão(ões), ${result.stats.new} novo(s), ${result.stats.early} adiantado(s)`,
+        title: 'Erro ao gerar plano',
+        description: 'Tente novamente',
+        variant: 'destructive',
       });
-    } else {
-      toast({
-        title: 'Plano carregado',
-        description: 'O plano deste dia já foi gerado anteriormente.',
-      });
+    } finally {
+      setIsGenerating(false);
     }
-    
-    setIsGenerating(false);
   };
 
-  const handleTopicClick = (topic: Topic, subject: Subject) => {
-    setSelectedTopic(topic);
-    setSelectedSubject(subject);
+  const handleTopicClick = (topic: any, subject: any) => {
+    // Convert from legacy format back to DB format
+    const dbTopic = topics.find(t => t.id === topic.id);
+    const dbSubject = subjects.find(s => s.id === subject.id);
+    if (dbTopic) setSelectedTopic(dbTopic);
+    if (dbSubject) setSelectedSubject(dbSubject);
     setDetailsDrawerOpen(true);
   };
 
-  const handleCompleteRequest = (topic: Topic, subject: Subject) => {
-    setSelectedTopic(topic);
-    setSelectedSubject(subject);
+  const handleCompleteRequest = (topic: any, subject: any) => {
+    const dbTopic = topics.find(t => t.id === topic.id);
+    const dbSubject = subjects.find(s => s.id === subject.id);
+    if (dbTopic) setSelectedTopic(dbTopic);
+    if (dbSubject) setSelectedSubject(dbSubject);
     setCompleteModalOpen(true);
   };
 
-  const handleCompleteReview = (correctAnswers: number, reviewNote: string) => {
+  const handleCompleteReview = async (correctAnswers: number, reviewNote: string) => {
     if (!user || !selectedTopic || !plan) return;
     
-    const scorePercent = (correctAnswers / 10) * 100;
-    const scheduleResult = calculateNextReview(correctAnswers, selectedDate);
-    
-    // Create review log
-    createReviewLog(
-      user.id,
-      selectedTopic.id,
-      correctAnswers,
-      scorePercent,
-      scheduleResult.nextReviewAt,
-      reviewNote
-    );
-    
-    // Update topic
-    updateTopic(selectedTopic.id, {
-      lastReviewedAt: new Date().toISOString(),
-      nextReviewAt: scheduleResult.nextReviewAt,
-      totalReviews: selectedTopic.totalReviews + 1,
-      lastScorePercent: scorePercent,
-    });
-    
-    // Mark as completed in plan
-    markTopicCompleted(plan.id, selectedTopic.id);
-    
-    // Refresh plan
-    const updatedPlan = getDailyPlanByDate(user.id, selectedDate);
-    setPlan(updatedPlan || null);
-    
-    // Refresh topics
-    setTopics(getTopicsByUser(user.id));
-    
-    toast({
-      title: 'Revisão concluída!',
-      description: `Próxima revisão em ${scheduleResult.daysUntilReview} dias.`,
-    });
-    
-    setCompleteModalOpen(false);
-    setSelectedTopic(null);
-    setSelectedSubject(null);
+    try {
+      const scorePercent = (correctAnswers / 10) * 100;
+      const scheduleResult = calculateNextReview(correctAnswers, selectedDate);
+      
+      // Create review log
+      await createReviewLog(
+        user.id,
+        selectedTopic.id,
+        correctAnswers,
+        scorePercent,
+        scheduleResult.nextReviewAt,
+        reviewNote
+      );
+      
+      // Update topic
+      await updateTopic(selectedTopic.id, {
+        last_reviewed_at: new Date().toISOString(),
+        next_review_at: scheduleResult.nextReviewAt,
+        total_reviews: selectedTopic.total_reviews + 1,
+        last_score_percent: scorePercent,
+      });
+      
+      // Mark as completed in plan
+      await markTopicCompleted(plan.id, selectedTopic.id);
+      
+      // Refresh data
+      const [updatedPlan, updatedTopics] = await Promise.all([
+        getDailyPlanByDate(user.id, selectedDate),
+        getTopicsByUser(user.id),
+      ]);
+      
+      setPlan(updatedPlan);
+      setTopics(updatedTopics);
+      
+      toast({
+        title: 'Revisão concluída!',
+        description: `Próxima revisão em ${scheduleResult.daysUntilReview} dias.`,
+      });
+      
+      setCompleteModalOpen(false);
+      setSelectedTopic(null);
+      setSelectedSubject(null);
+    } catch (error) {
+      console.error('Error completing review:', error);
+      toast({
+        title: 'Erro ao registrar revisão',
+        description: 'Tente novamente',
+        variant: 'destructive',
+      });
+    }
   };
 
-  const handleTopicUpdate = (updatedTopic: Topic) => {
-    setSelectedTopic(updatedTopic);
-    setTopics(getTopicsByUser(user!.id));
+  const handleTopicUpdate = async (updatedTopic: any) => {
+    if (!user) return;
+    const refreshedTopics = await getTopicsByUser(user.id);
+    setTopics(refreshedTopics);
+    const dbTopic = refreshedTopics.find(t => t.id === updatedTopic.id);
+    if (dbTopic) setSelectedTopic(dbTopic);
   };
 
-  const handlePlanUpdate = (updatedPlan: DailyPlan) => {
-    setPlan(updatedPlan);
+  const handlePlanUpdate = async (updatedPlan: any) => {
+    if (!user) return;
+    const refreshedPlan = await getDailyPlanByDate(user.id, selectedDate);
+    setPlan(refreshedPlan);
   };
 
   const navigateDate = (direction: 'prev' | 'next') => {
@@ -164,8 +286,25 @@ const App = () => {
     }
   };
 
-  const completedCount = plan?.topicIdsCompleted.length || 0;
-  const totalCount = plan?.topicIdsSelected.length || 0;
+  const completedCount = plan?.topic_ids_completed.length || 0;
+  const totalCount = plan?.topic_ids_selected.length || 0;
+
+  // Convert to legacy format for KanbanBoard
+  const legacyPlan = plan ? toLegacyPlan(plan) : null;
+  const legacySubjects = subjects.map(toLegacySubject);
+  const legacySelectedTopic = selectedTopic ? toLegacyTopic(selectedTopic) : null;
+  const legacySelectedSubject = selectedSubject ? toLegacySubject(selectedSubject) : null;
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-background">
+        <AppHeader />
+        <div className="flex items-center justify-center h-[calc(100vh-4rem)]">
+          <Loader2 className="w-8 h-8 animate-spin text-primary" />
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background">
@@ -215,7 +354,11 @@ const App = () => {
                 disabled={isGenerating}
                 className="gradient-primary text-white gap-2"
               >
-                <Sparkles className="w-4 h-4" />
+                {isGenerating ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Sparkles className="w-4 h-4" />
+                )}
                 {plan ? 'Atualizar Plano' : 'Gerar Plano do Dia'}
               </Button>
             )}
@@ -266,10 +409,10 @@ const App = () => {
         )}
 
         {/* Kanban Board */}
-        {plan && (
+        {legacyPlan && (
           <KanbanBoard
-            plan={plan}
-            subjects={subjects}
+            plan={legacyPlan as any}
+            subjects={legacySubjects as any}
             targetDate={selectedDate}
             isToday={isToday}
             onTopicClick={handleTopicClick}
@@ -282,24 +425,24 @@ const App = () => {
       {/* Modals */}
       <CompleteReviewModal
         isOpen={completeModalOpen}
-        onClose={() => {
+        onClose={async () => {
           setCompleteModalOpen(false);
           // Refresh plan to revert visual change if cancelled
           if (user) {
-            const updatedPlan = getDailyPlanByDate(user.id, selectedDate);
-            setPlan(updatedPlan || null);
+            const updatedPlan = await getDailyPlanByDate(user.id, selectedDate);
+            setPlan(updatedPlan);
           }
         }}
-        topic={selectedTopic}
-        subject={selectedSubject}
+        topic={legacySelectedTopic as any}
+        subject={legacySelectedSubject as any}
         onComplete={handleCompleteReview}
       />
 
       <TopicDetailsDrawer
         isOpen={detailsDrawerOpen}
         onClose={() => setDetailsDrawerOpen(false)}
-        topic={selectedTopic}
-        subject={selectedSubject}
+        topic={legacySelectedTopic as any}
+        subject={legacySelectedSubject as any}
         onTopicUpdate={handleTopicUpdate}
       />
     </div>
